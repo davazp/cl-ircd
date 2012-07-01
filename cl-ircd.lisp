@@ -195,10 +195,10 @@
      collect (subseq string begin end)
      while end))
 
-;;; Send a message: SOURCE COMMAND ARGUMENTS... to RECIPENTS.
-(defun message (recipents source command &rest arguments)
-  (dolist (recipent (mklist recipents))
-    (let ((stream (make-broadcast-stream *standard-output* (usocket:socket-stream (user-socket recipent)))))
+;;; Send a message: SOURCE COMMAND ARGUMENTS... to RECIPIENTS.
+(defun message (recipients source command &rest arguments)
+  (dolist (recipient (mklist recipients))
+    (let ((stream (make-broadcast-stream *standard-output* (usocket:socket-stream (user-socket recipient)))))
       (when source
         (format stream ":~a " source))
       (if (numberp command)
@@ -207,6 +207,7 @@
       (loop for (arg more) on arguments
          while more do (format stream " ~a" arg)
          finally (format stream " ~@[~*:~]~a" (find #\space arg) arg))
+      (write-char #\Return stream)
       (terpri stream)
       (force-output stream))))
 
@@ -214,14 +215,14 @@
 (defun rpl (command &rest arguments)
   (apply #'message *user* *servername* command (user-nickname *user*) arguments))
 
-;;; Send a message: user COMMAND ARGUMENTS... to RECIPENTS.
-(defun propagate (recipents command &rest arguments)
+;;; Send a message: user COMMAND ARGUMENTS... to RECIPIENTS.
+(defun propagate (recipients command &rest arguments)
   (let ((source
          (format nil "~a!~a@~a"
                  (user-nickname *user*)
                  (user-username *user*)
                  (user-hostname *user*))))
-    (apply #'message recipents source command arguments)))
+    (apply #'message recipients source command arguments)))
 
 (defun visible-users (user)
   (delete-duplicates (mappend #'channel-users (user-channels user))))
@@ -371,10 +372,8 @@
 (define-command part (channel-list &optional message)
   (dolist (channame (parse-list channel-list))
     (let ((channel (find-channel channame)))
-      (part channel)
-      (apply #'propagate
-             (channel-users channel)
-             "PART" (channel-name channel) (mklist message)))))
+      (apply #'propagate (channel-users channel) "PART" (channel-name channel) (mklist message))
+      (part channel))))
 
 
 (define-command mode (target &optional mode)
@@ -385,11 +384,24 @@
 (defun find-user (nickname)
   (gethash nickname (server-nicknames *server*)))
 
-(define-command privmsg (recipent message)
-  (declare (ignore recipent message)))
+(defun list-of-users (string)
+  (if (find (char string 0) "#")
+      (let ((channel (find-channel string)))
+        (if channel
+            (channel-users channel)))
+      (list (find-user string))))
 
-(define-command notice (recipent message)
-  (declare (ignore recipent message)))
+(define-command privmsg (recipient message)
+  (let ((users (list-of-users recipient)))
+    (if (null users)
+        (rpl 401 recipient recipient "No such nick/channel")
+        (propagate (remove *user* users) "PRIVMSG" recipient message))))
+
+(define-command notice (recipient message)
+  (let ((users (list-of-users recipient)))
+    (if (null users)
+        (rpl 401 recipient recipient "No such nick/channel")
+        (propagate (remove *user* users) "NOTICE" recipient message))))
 
 
 ;;; Misc
