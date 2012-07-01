@@ -195,6 +195,7 @@
      collect (subseq string begin end)
      while end))
 
+;;; Send a message: SOURCE COMMAND ARGUMENTS... to RECIPENTS.
 (defun message (recipents source command &rest arguments)
   (dolist (recipent (mklist recipents))
     (let ((stream (make-broadcast-stream *standard-output* (usocket:socket-stream (user-socket recipent)))))
@@ -209,17 +210,22 @@
       (terpri stream)
       (force-output stream))))
 
+;;; Send a message: <server> COMMAND <user> ARGUMENTS to the user.
 (defun rpl (command &rest arguments)
   (apply #'message *user* *servername* command (user-nickname *user*) arguments))
 
-(defgeneric user-source (user)
-  (:method ((user user))
-    (format nil "~a!~a@~a" (user-nickname user) (user-username user) (user-hostname user))))
-
-(defun propagate (command &rest arguments)
-  (let ((source (user-source *user*))
-        (recipents ))
+;;; Send a message: user COMMAND ARGUMENTS... to RECIPENTS.
+(defun propagate (recipents command &rest arguments)
+  (let ((source
+         (format nil "~a!~a@~a"
+                 (user-nickname *user*)
+                 (user-username *user*)
+                 (user-hostname *user*))))
     (apply #'message recipents source command arguments)))
+
+(defun visible-users (user)
+  (delete-duplicates (mappend #'channel-users (user-channels user))))
+
 
 (defun process-input (user line)
   (format t "<< ~a~%" line)
@@ -309,9 +315,7 @@
     (setf (user-nickname *user*) name)
     (setf (gethash name (server-nicknames *server*)) *user*)
     (when (user-registered-p *user*)
-      (message (delete-duplicates (mappend #'channel-users (user-channels *user*)))
-               (user-source *user*)
-               "NICK" name))
+      (propagate (visible-users *user*) "NICK" name))
     (try-to-register-user)))
 
 (define-command user (username hostname servername realname)
@@ -337,7 +341,7 @@
   (let ((channel (create-channel channel-name)))
     (push *user* (channel-users channel))
     (push channel (user-channels *user*))
-    (message (channel-users channel) (user-source *user*) "JOIN" channel-name)
+    (propagate (channel-users channel) "JOIN" channel-name)
     (if (channel-topic channel)
         (rpl 332 channel-name (channel-topic channel))
         (rpl 331 channel-name "No topic is set")) ;TPL_TOPIC
@@ -368,9 +372,8 @@
   (dolist (channame (parse-list channel-list))
     (let ((channel (find-channel channame)))
       (part channel)
-      (apply #'message
+      (apply #'propagate
              (channel-users channel)
-             (user-source *user*)
              "PART" (channel-name channel) (mklist message)))))
 
 
@@ -397,10 +400,7 @@
 
 (define-command quit (&optional message)
   (mapc #'part (user-channels *user*))
-  (apply #'message
-         (delete-duplicates (mappend #'channel-users (user-channels *user*)))
-         (user-source *user*)
-         "QUIT" (mklist message)))
+  (apply #'propagate (visible-users *user*) "QUIT" (mklist message)))
 
 
 ;;; cl-ircd.lisp ends here
