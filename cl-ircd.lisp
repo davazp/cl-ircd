@@ -197,7 +197,7 @@
 
 (defun message (recipents source command &rest arguments)
   (dolist (recipent (mklist recipents))
-    (let ((stream (usocket:socket-stream (user-socket recipent))))
+    (let ((stream (make-broadcast-stream *standard-output* (usocket:socket-stream (user-socket recipent)))))
       (when source
         (format stream ":~a " source))
       (if (numberp command)
@@ -218,11 +218,11 @@
 
 (defun propagate (command &rest arguments)
   (let ((source (user-source *user*))
-        (recipents (delete-duplicates (mappend #'channel-users (user-channels *user*)))))
+        (recipents ))
     (apply #'message recipents source command arguments)))
 
 (defun process-input (user line)
-  (format t "DEBUG: ~a~%" line)
+  (format t "<< ~a~%" line)
   (when (string= line "")
     (return-from process-input))
   (multiple-value-bind (source command args)
@@ -271,7 +271,23 @@
              (user-hostname *user*))
       (reply 002 "Your host is ~a, runnning ~a" *servername* *software*)
       (reply 003 "This server was created ~a" (timestamp-string (server-uptime *server*)))
-      (rpl   004 *servername* *software* "i" "o"))))
+      (rpl   004 *servername* *software* "i" "o")
+      ;; Send MOTD
+      (cond
+        ((probe-file "MOTD")
+         (reply 375 "~a Message of the day - " *servername*)
+         (with-open-file (in "MOTD")
+           (loop
+              for line = (read-line in nil)
+              while line
+              do (loop
+                    for begin = 0 then end
+                    for end = (min (length line) (+ begin 80))
+                    while (< begin end)
+                    do (rpl 372 (subseq line begin end)))))
+         (rpl 376 "End of MOTD command"))
+        (t
+         (rpl 422 "MOTD File is missing"))))))
 
 
 ;;; Registration commands
@@ -287,13 +303,15 @@
         ((eq (gethash name nicknames) *user*)
          (remhash (user-nickname *user*) nicknames))
         (t
-         (rpl 433 name "Nickname is already in use")
+         (message *user* *servername* 433 "*" "Nickname is already in use")
          (return-from irc-nick))))
     ;; Register the nickname and propagate it if it is a change.
     (setf (user-nickname *user*) name)
     (setf (gethash name (server-nicknames *server*)) *user*)
     (when (user-registered-p *user*)
-      (propagate "NICK" name))
+      (message (delete-duplicates (mappend #'channel-users (user-channels *user*)))
+               (user-source *user*)
+               "NICK" name))
     (try-to-register-user)))
 
 (define-command user (username hostname servername realname)
@@ -316,11 +334,10 @@
 
 (defun join-1 (channel-name &optional password)
   (declare (ignorable password))
-  (format t "Joining to ~a~%" channel-name)
   (let ((channel (create-channel channel-name)))
     (push *user* (channel-users channel))
     (push channel (user-channels *user*))
-    (propagate "JOIN" channel-name)
+    (message (channel-users channel) (user-source *user*) "JOIN" channel-name)
     (if (channel-topic channel)
         (rpl 332 channel-name (channel-topic channel))
         (rpl 331 channel-name "No topic is set")) ;TPL_TOPIC
@@ -341,13 +358,24 @@
        for passwd = (car passwd-tail)
        do (join-1 channel-name passwd))))
 
+(defun part (channel)
+  (setf (user-channels *user*)
+        (remove channel (user-channels *user*)))
+  (setf (channel-users channel)
+        (remove *user* (channel-users channel))))
+
 (define-command part (channel-list &optional message)
   (dolist (channame (parse-list channel-list))
-    (apply #'propagate "PART" channame (mklist message))))
+    (let ((channel (find-channel channame)))
+      (part channel)
+      (apply #'message
+             (channel-users channel)
+             (user-source *user*)
+             "PART" (channel-name channel) (mklist message)))))
 
-(define-command quit (&optional message)
-  (apply #'propagate "QUIT" (mklist message)))
 
+(define-command mode (target &optional mode)
+  (declare (ignore target mode)))
 
 ;;; Message commands
 
@@ -355,12 +383,24 @@
   (gethash nickname (server-nicknames *server*)))
 
 (define-command privmsg (recipent message)
-  )
+  (declare (ignore recipent message)))
 
 (define-command notice (recipent message)
-  )
+  (declare (ignore recipent message)))
 
-(define-command mode (target &optional mode)
-  )
+
+;;; Misc
+
+(define-command ping (server1 &optional server2)
+  (declare (ignore server2))
+  (message *user* nil "PONG" server1))
+
+(define-command quit (&optional message)
+  (mapc #'part (user-channels *user*))
+  (apply #'message
+         (delete-duplicates (mappend #'channel-users (user-channels *user*)))
+         (user-source *user*)
+         "QUIT" (mklist message)))
+
 
 ;;; cl-ircd.lisp ends here
