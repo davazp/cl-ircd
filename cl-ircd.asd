@@ -15,9 +15,18 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with cl-ircd.  If not, see <http://www.gnu.org/licenses/>.
 
+(defpackage :cl-ircd-system
+  (:use :cl :asdf)
+  (:export #:*version* #:*software*))
+
+(in-package :cl-ircd-system)
+
+(defvar *version* "0.1")
+(defvar *software* (format nil "cl-ircd-~a" *version*))
+
 (defsystem :cl-ircd
     :name "Common Lisp IRC Server"
-    :version "0.1"
+    :version #.*version*
     :depends-on (:usocket :bordeaux-threads)
     :serial t
     :components
