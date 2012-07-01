@@ -26,18 +26,32 @@
 (defvar *servername* "clircd")
 (defvar *server*)
 
+;;; Return X if it is a list, or a list whose single element is X
+;;; otherwise.
 (defun mklist (x)
   (if (listp x) x (list x)))
 
+;;; Map FUNCTION on list and append the resulting lists.
 (defun mappend (function list)
   (reduce #'append (mapcar function list)))
 
+;;; Remove X from PLACE and set the result in PLACE again.
+(defmacro removef (x place)
+  (let ((placevar (gensym))
+        (valuevar (gensym)))
+    `(let ((,valuevar ,x)
+           (,placevar ,place))
+       (setf ,place (remove ,valuevar ,placevar)))))
+
+;;; Compare two characters case-insensitively.
 (defun char-ci= (char1 char2)
   (char= (char-upcase char1) (char-upcase char2)))
 
+;;; Compare two strings case-insensitively.
 (defun string-ci= (string1 string2)
   (every #'char-ci= string1 string2))
 
+;;; Check if CHAR is a whitespace (newline or space).
 (defun whitespacep (char)
   (or (char= char #\newline) (char= char #\space)))
 
@@ -167,8 +181,7 @@
                             (process-input user line))
                           (write-char ch input-buffer)))
                (end-of-file ()
-                 (setf (server-users server)
-                       (remove user (server-users server))))))))))))
+                 (removef user (server-users server)))))))))))
 
 (defvar *command-table*
   (make-hash-table :test #'equalp))
@@ -364,17 +377,14 @@
        do (join-1 channel-name passwd))))
 
 (defun part (channel)
-  (setf (user-channels *user*)
-        (remove channel (user-channels *user*)))
-  (setf (channel-users channel)
-        (remove *user* (channel-users channel))))
+  (removef channel (user-channels *user*))
+  (removef *user* (channel-users channel)))
 
 (define-command part (channel-list &optional message)
   (dolist (channame (parse-list channel-list))
     (let ((channel (find-channel channame)))
       (apply #'propagate (channel-users channel) "PART" (channel-name channel) (mklist message))
       (part channel))))
-
 
 (define-command mode (target &optional mode)
   (declare (ignore target mode)))
@@ -412,6 +422,8 @@
 
 (define-command quit (&optional message)
   (mapc #'part (user-channels *user*))
+  (removef *user* (server-users *server*))
+  (remhash (user-nickname *user*) (server-nicknames *server*))
   (apply #'propagate (visible-users *user*) "QUIT" (mklist message)))
 
 
