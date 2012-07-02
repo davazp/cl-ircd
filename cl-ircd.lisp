@@ -35,6 +35,10 @@
 (defun mappend (function list)
   (reduce #'append (mapcar function list)))
 
+(defun first-line (string)
+  (with-input-from-string (in string)
+    (read-line in nil)))
+
 ;;; Remove X from PLACE and set the result in PLACE again.
 (defmacro removef (x place)
   (let ((placevar (gensym))
@@ -164,6 +168,7 @@
   (let ((socket (usocket:socket-accept (server-socket server))))
     (push (make-instance 'user :socket socket) (server-users server))))
 
+(defvar *user*)
 (defun handle-event (server)
   (let ((sockets (mapcar #'user-socket (server-users server))))
     (cond
@@ -173,23 +178,25 @@
       (t
        (usocket:wait-for-input sockets :timeout 5)
        (dolist (user (server-users server))
-         ;; Collect data in the input buffer of the user until newline
-         ;; is found. Then process the input line.
-         (with-slots (socket input-buffer) user
-           (let ((stream (usocket:socket-stream socket)))
-             (handler-case
-                 (loop for ch = (read-char-no-hang stream) while ch do
-                      (if (char= ch #\newline)
-                          (let ((line (string-right-trim #(#\Return) (get-output-stream-string input-buffer))))
-                            (process-input user line))
-                          (write-char ch input-buffer)))
-               (end-of-file ()
-                 (removef user (server-users server)))))))))))
+         (let ((*user* user))
+           ;; Collect data in the input buffer of the user until newline
+           ;; is found. Then process the input line.
+           (with-slots (socket input-buffer) user
+             (let ((stream (usocket:socket-stream socket)))
+               (handler-case
+                   (loop for ch = (read-char-no-hang stream) while ch do
+                        (if (char= ch #\newline)
+                            (let ((line (string-right-trim #(#\Return) (get-output-stream-string input-buffer))))
+                              (process-input user line))
+                            (write-char ch input-buffer)))
+                 #+sbcl
+                 (sb-int:closed-stream-error ()
+                   (irc-quit))
+                 (end-of-file ()
+                   (irc-quit)))))))))))
 
 (defvar *command-table*
   (make-hash-table :test #'equalp))
-
-(defvar *user*)
 
 (defmacro define-command (name args &body body)
   (let ((funcname (concatenate 'string "IRC-" (prin1-to-string name))))
@@ -198,11 +205,14 @@
 
 (defun parse-input-line (string)
   (with-input-from-string (in string)
-    (values (and (char= (peek-char nil in) #\:) (parse in))
+    (values (and (char= (peek-char nil in) #\:)
+                 (progn (read-char in) (parse in)))
             (parse in)
             (loop
                for ch = (peek-char nil in nil) while ch
-               collect (if (char= ch #\:) (read-line in) (parse in))))))
+               collect (if (char= ch #\:)
+                           (progn (read-char in) (read-line in))
+                           (parse in))))))
 
 (defun parse-list (string)
   (loop
@@ -252,20 +262,20 @@
       (parse-input-line line)
     (declare (ignorable source))
     (setf (last-activity user) (get-universal-time))
-    (let ((*user* user))
-      (unless (or (user-registered-p *user*)
-                  (find command '("USER" "NICK" "PING") :test #'string-ci=))
-        (rpl 451 "You have not registered")
-        (return-from process-input))
-      (let ((handler (gethash command *command-table*)))
-        (if handler
-            (handler-case (apply handler args)
-              (simple-condition (error)
-                (rpl "NOTICE" 
-                     (apply #'format nil
-                            (simple-condition-format-control error)
-                            (simple-condition-format-arguments error)))))
-            (rpl 421 "Unknown command"))))))
+    (unless (or (user-registered-p *user*)
+                (find command '("USER" "NICK" "PING") :test #'string-ci=))
+      (rpl 451 "You have not registered")
+      (return-from process-input))
+    (let ((handler (gethash command *command-table*)))
+      (if handler
+          (handler-case (apply handler args)
+            (simple-condition (error)
+              (rpl "NOTICE"
+                   (first-line
+                    (apply #'format nil
+                           (simple-condition-format-control error)
+                           (simple-condition-format-arguments error))))))
+          (rpl 421 "Unknown command")))))
 
 ;;; IRC Commands
 
@@ -326,13 +336,13 @@
         ((eq (gethash name nicknames) *user*)
          (remhash (user-nickname *user*) nicknames))
         (t
-         (message *user* *servername* 433 "*" "Nickname is already in use")
+         (message *user* *servername* 433 "*" name "Nickname is already in use")
          (return-from irc-nick))))
     ;; Register the nickname and propagate it if it is a change.
-    (setf (user-nickname *user*) name)
-    (setf (gethash name (server-nicknames *server*)) *user*)
     (when (user-registered-p *user*)
       (propagate (visible-users *user*) "NICK" name))
+    (setf (user-nickname *user*) name)
+    (setf (gethash name (server-nicknames *server*)) *user*)
     (try-to-register-user)))
 
 (define-command user (username hostname servername realname)
@@ -362,11 +372,7 @@
     (if (channel-topic channel)
         (rpl 332 channel-name (channel-topic channel))
         (rpl 331 channel-name "No topic is set")) ;TPL_TOPIC
-    (dolist (user (channel-users channel))
-      ;; TODO: Optimize several nicks in the same message.
-      (rpl 353 "=" channel-name (user-nickname user))) ;; RPL_NAMREPLY
-    (rpl 366 channel-name "End of NAMES list")) ; RPL_ENDOFNAMES
-  )
+    (irc-names channel-name)))
 
 (define-command join (channel-list &optional pass-list)
   (when (string= channel-list "0")
@@ -389,8 +395,41 @@
       (apply #'propagate (channel-users channel) "PART" (channel-name channel) (mklist message))
       (part channel))))
 
+(define-command names (&optional channame-list target)
+  (declare (ignore target))
+  ;; TODO: If CHANNEL-NAME is omitted, list all the channels.
+  (when channame-list
+    (let ((channels (remove nil (mapcar #'find-channel (parse-list channame-list)))))
+      (dolist (channel channels)
+        (let* ((name (channel-name channel))
+               ;; :<servername> 353 nickname = channel-name :<nicknames>....\r\n
+               (width  (- 512 (length *servername*) 12 (length (user-nickname *user*)) (length name)))
+               (remainder width)
+               (nicknames nil))
+          (dolist (user (channel-users channel))
+            (when (< remainder (length (user-nickname user)))
+              (rpl 353 "=" name (format nil "~{~a~^ ~}" nicknames)) ; RPL_NAMREPLY
+              (setf nicknames nil)
+              (setf remainder width))
+            (decf remainder (1+ (length (user-nickname user))))
+            (push (user-nickname user) nicknames))
+          (when nicknames
+            (rpl 353 "=" name (format nil "~{~a~^ ~}" nicknames))) ; RPL_NAMREPLY
+          (rpl 366 name "End of NAMES list") ; RPL_ENDOFNAMES
+          )))))
+
 (define-command mode (target &optional mode)
   (declare (ignore target mode)))
+
+(define-command topic (channame &optional message)
+  (format t "~a" message)
+  (let ((channel (find-channel channame)))
+    (when channel
+      (if (null message)
+          (rpl 332 channame (channel-topic channel))
+          (let ((newtopic (if (string= message "") nil message)))
+            (setf (channel-topic channel) newtopic)
+            (propagate (channel-users channel) "TOPIC" newtopic))))))
 
 ;;; Message commands
 
@@ -424,14 +463,15 @@
   (message *user* nil "PONG" server1))
 
 (define-command quit (&optional message)
-  (apply #'propagate (visible-users *user*) "QUIT" (mklist message))  
-  (mapc #'part (user-channels *user*))
-  (removef *user* (server-users *server*))
-  (remhash (user-nickname *user*) (server-nicknames *server*))
+  (apply #'propagate (visible-users *user*) "QUIT" (mklist message))
   (message *user* "ERROR"
            (format nil "Closing Link: ~a ~@[~a~]"
                    (user-hostname *user*)
                    message))
+  (removef *user* (server-users *server*))
+  (mapc #'part (user-channels *user*))
+  (removef *user* (server-users *server*))
+  (remhash (user-nickname *user*) (server-nicknames *server*))
   (usocket:socket-close (user-socket *user*)))
 
 
