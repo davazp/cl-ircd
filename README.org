@@ -9,7 +9,7 @@
   - [[http://common-lisp.net/project/bordeaux-threads/][bordeaux-threads]]
       
   Once you have install the dependencies, load the /cl-ircd/
-  system. It provides you a /IRCD/ system. You can lunch the server
+  system. It provides you a /IRCD/ package. You can lunch the server
   on the default port 6667 wit
 
   =(ircd::start-server)=
