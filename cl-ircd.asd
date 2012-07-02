@@ -25,11 +25,13 @@
 (defvar *software* (format nil "cl-ircd-~a" *version*))
 
 (defsystem :cl-ircd
-    :name "Common Lisp IRC Server"
+    :name "cl-ircd"
+    :description "Common Lisp IRC Server"
     :version #.*version*
     :depends-on (:usocket :bordeaux-threads)
     :serial t
     :components
-    ((:file "cl-ircd")))
+    ((:static-file "COPYING")
+     (:file "cl-ircd")))
 
 ;;; cl-ircd.asd ends here
