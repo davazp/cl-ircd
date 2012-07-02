@@ -1,0 +1,15 @@
+* cl-ircd
+
+  cl-ircd is a simple /IRC server/ written in Common Lisp. It is very
+  far from complete and it is mostly useless, but if you find some
+  reason to use it or improve it, feel free to do it.
+
+  It depends on:
+  - [[http://common-lisp.net/project/usocket/][usocket]]
+  - [[http://common-lisp.net/project/bordeaux-threads/][bordeaux-threads]]
+      
+  Once you have install the dependencies, load the /cl-ircd/
+  system. It provides you a /IRCD/ system. You can lunch the server
+  on the default port 6667 wit
+
+  =(ircd::start-server)=
