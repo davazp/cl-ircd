@@ -150,7 +150,7 @@
     :type integer
     :accessor last-activity)))
 
-(defun start-server (&key (port 6668) (host usocket:*wildcard-host*))
+(defun start-server (&key (port 6667) (host usocket:*wildcard-host*))
   (let* ((socket (usocket:socket-listen host port :reuse-address t :backlog 20))
 	 (server (make-instance 'server :port port :socket socket)))
     (bordeaux-threads:make-thread
