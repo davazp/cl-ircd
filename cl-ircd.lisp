@@ -68,6 +68,9 @@
        while (and ch (whitespacep ch))
        do (read-char stream))))
 
+
+;;; Classes
+
 (defclass server ()
   ((port
     :initarg :port
@@ -271,11 +274,11 @@
 
 (defun timestamp-string (timestamp)
   (multiple-value-bind (second minute hour date month year dow daylight timezone)
-      (decode-universal-time timestamp)
+      (decode-universal-time timestamp 0)
     (declare (ignore daylight timezone))
     (let ((days #("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun"))
           (months #("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")))
-      (format nil "~a ~a ~d ~d at ~2,'0d:~2,'0d:~2,'0d" (aref days dow) (aref months month)
+      (format nil "~a ~a ~d ~d at ~2,'0d:~2,'0d:~2,'0d GMT" (aref days dow) (aref months month)
               date year hour minute second))))
 
 (defun try-to-register-user ()
@@ -421,10 +424,15 @@
   (message *user* nil "PONG" server1))
 
 (define-command quit (&optional message)
+  (apply #'propagate (visible-users *user*) "QUIT" (mklist message))  
   (mapc #'part (user-channels *user*))
   (removef *user* (server-users *server*))
   (remhash (user-nickname *user*) (server-nicknames *server*))
-  (apply #'propagate (visible-users *user*) "QUIT" (mklist message)))
+  (message *user* "ERROR"
+           (format nil "Closing Link: ~a ~@[~a~]"
+                   (user-hostname *user*)
+                   message))
+  (usocket:socket-close (user-socket *user*)))
 
 
 ;;; cl-ircd.lisp ends here
