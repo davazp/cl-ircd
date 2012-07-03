@@ -211,7 +211,10 @@
             (loop
                for ch = (peek-char nil in nil) while ch
                collect (if (char= ch #\:)
-                           (progn (read-char in) (read-line in))
+                           (progn (read-char in)
+                                  (if (not (peek-char nil in nil nil))
+                                      ""
+                                      (read-line in nil)))
                            (parse in))))))
 
 (defun parse-list (string)
@@ -232,7 +235,7 @@
           (princ command stream))
       (loop for (arg more) on arguments
          while more do (format stream " ~a" arg)
-         finally (format stream " ~@[~*:~]~a" (find #\space arg) arg))
+         finally (format stream " ~@[~*:~]~a" (or (find #\space arg) (string= arg "")) arg))
       (write-char #\Return stream)
       (terpri stream)
       (force-output stream))))
@@ -422,14 +425,13 @@
   (declare (ignore target mode)))
 
 (define-command topic (channame &optional message)
-  (format t "~a" message)
   (let ((channel (find-channel channame)))
     (when channel
       (if (null message)
           (rpl 332 channame (channel-topic channel))
           (let ((newtopic (if (string= message "") nil message)))
             (setf (channel-topic channel) newtopic)
-            (propagate (channel-users channel) "TOPIC" newtopic))))))
+            (propagate (channel-users channel) "TOPIC" channame message))))))
 
 ;;; Message commands
 
