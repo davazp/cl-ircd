@@ -227,18 +227,20 @@
 ;;; Send a message: SOURCE COMMAND ARGUMENTS... to RECIPIENTS.
 (defun message (recipients source command &rest arguments)
   (dolist (recipient (mklist recipients))
-    (let ((stream (make-broadcast-stream *standard-output* (usocket:socket-stream (user-socket recipient)))))
-      (when source
-        (format stream ":~a " source))
-      (if (numberp command)
-          (format stream "~3,'0d" command)
-          (princ command stream))
-      (loop for (arg more) on arguments
-         while more do (format stream " ~a" arg)
-         finally (format stream " ~@[~*:~]~a" (or (find #\space arg) (string= arg "")) arg))
-      (write-char #\Return stream)
-      (terpri stream)
-      (force-output stream))))
+    (let ((stream (usocket:socket-stream (user-socket recipient))))
+      (when (output-stream-p stream)
+        (let ((stream (make-broadcast-stream *standard-output* stream)))
+          (when source
+            (format stream ":~a " source))
+          (if (numberp command)
+              (format stream "~3,'0d" command)
+              (princ command stream))
+          (loop for (arg more) on arguments
+             while more do (format stream " ~a" arg)
+             finally (format stream " ~@[~*:~]~a" (or (find #\space arg) (string= arg "")) arg))
+          (write-char #\Return stream)
+          (terpri stream)
+          (force-output stream))))))
 
 ;;; Send a message: <server> COMMAND <user> ARGUMENTS to the user.
 (defun rpl (command &rest arguments)
