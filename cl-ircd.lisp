@@ -84,14 +84,14 @@
     :initform (get-universal-time)
     :reader server-uptime)
    (nicknames
-    :initform (make-hash-table :test #'equalp :weakness :value)
+    :initform (make-hash-table :test #'equalp)
     :reader server-nicknames)
    (users
     :initform nil
     :type list
     :accessor server-users)
    (channels
-    :initform (make-hash-table :test #'equal :weakness :value)
+    :initform (make-hash-table :test #'equal)
     :reader server-channels)
    (socket
     :initarg :socket
