@@ -176,7 +176,7 @@
       ((null sockets)
        (sleep 1))
       (t
-       (usocket:wait-for-input sockets :timeout 5)
+       (usocket:wait-for-input sockets :timeout 5 :ready-only t)
        (dolist (user (server-users server))
          (let ((*user* user))
            ;; Collect data in the input buffer of the user until newline
