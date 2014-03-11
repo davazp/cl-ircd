@@ -1,6 +1,6 @@
 ;;; cl-ircd.lisp --- A Common Lisp IRC Server
 
-;;; Copyright (C) 2012 David Vázquez
+;;; Copyright (C) 2012, 2014 David Vázquez
 
 ;; This file is part of cl-ircd.
 ;;
@@ -19,7 +19,8 @@
 
 (defpackage :cl-ircd
   (:use :cl :cl-ircd-system)
-  (:nicknames :ircd))
+  (:nicknames :ircd)
+  (:export #:start-server #:stop-server))
 
 (in-package :cl-ircd)
 
@@ -160,9 +161,11 @@
     (setf *server* server)))
 
 (defun stop-server ()
-  (usocket:socket-close (server-socket *server*))
+  (ignore-errors
+    (usocket:socket-close (server-socket *server*)))
   (dolist (user (server-users *server*))
-    (usocket:socket-close (user-socket user))))
+    (ignore-errors
+      (usocket:socket-close (user-socket user)))))
 
 (defun accept-connection (server)
   (let ((socket (usocket:socket-accept (server-socket server))))
@@ -268,7 +271,7 @@
     (declare (ignorable source))
     (setf (last-activity user) (get-universal-time))
     (unless (or (user-registered-p *user*)
-                (find command '("USER" "NICK" "PING") :test #'string-ci=))
+                (find command '("USER" "PASS" "NICK" "PING") :test #'string-ci=))
       (rpl 451 "You have not registered")
       (return-from process-input))
     (let ((handler (gethash command *command-table*)))
@@ -468,10 +471,11 @@
 
 (define-command quit (&optional message)
   (apply #'propagate (visible-users *user*) "QUIT" (mklist message))
-  (message *user* "ERROR"
-           (format nil "Closing Link: ~a ~@[~a~]"
-                   (user-hostname *user*)
-                   message))
+  (ignore-errors 
+    (message *user* "ERROR"
+             (format nil "Closing Link: ~a ~@[~a~]"
+                     (user-hostname *user*)
+                     message)))
   (removef *user* (server-users *server*))
   (mapc #'part (user-channels *user*))
   (removef *user* (server-users *server*))
