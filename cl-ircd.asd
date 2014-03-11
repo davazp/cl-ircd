@@ -31,7 +31,8 @@
     :depends-on (:usocket :bordeaux-threads)
     :serial t
     :components
-    ((:static-file "COPYING")
+    ((:static-file "README.org")
+     (:static-file "COPYING")
      (:file "cl-ircd")))
 
 ;;; cl-ircd.asd ends here
