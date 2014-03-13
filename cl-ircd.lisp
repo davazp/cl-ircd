@@ -98,6 +98,7 @@
     :initarg :socket
     :reader server-socket)))
 
+
 (defclass channel ()
   ((name
     :initarg :name
@@ -230,7 +231,7 @@
 ;;; Send a message: SOURCE COMMAND ARGUMENTS... to RECIPIENTS.
 (defun message (recipients source command &rest arguments)
   (dolist (recipient (mklist recipients))
-    (let ((stream (usocket:socket-stream (user-socket recipient))))
+    (let ((stream ( usocket:socket-stream (user-socket recipient))))
       (when (output-stream-p stream)
         (let ((stream (make-broadcast-stream *standard-output* stream)))
           (when source
@@ -338,17 +339,16 @@
 
 (define-command nick (name)
   (with-slots (nicknames) *server*
+    (when (string= name (user-nickname *user*))
+      (return-from irc-nick))
     ;; If the new nickname already exists
     (when (gethash name nicknames)
-      (cond
-        ((eq (gethash name nicknames) *user*)
-         (remhash (user-nickname *user*) nicknames))
-        (t
-         (message *user* *servername* 433 "*" name "Nickname is already in use")
-         (return-from irc-nick))))
+      (message *user* *servername* 433 "*" name "Nickname is already in use")
+      (return-from irc-nick))
     ;; Register the nickname and propagate it if it is a change.
+    (remhash (user-nickname *user*) nicknames)
     (when (user-registered-p *user*)
-      (propagate (visible-users *user*) "NICK" name))
+      (propagate (adjoin *user* (visible-users *user*)) "NICK" name))
     (setf (user-nickname *user*) name)
     (setf (gethash name (server-nicknames *server*)) *user*)
     (try-to-register-user)))
