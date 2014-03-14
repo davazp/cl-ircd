@@ -98,6 +98,14 @@
     :initarg :socket
     :reader server-socket)))
 
+(defun server-channel-list (&optional (server *server*))
+  (let ((result nil))
+    (maphash (lambda (key value)
+               (declare (ignore key))
+               (push value result))
+             (server-channels server))
+    result))
+
 
 (defclass channel ()
   ((name
@@ -120,7 +128,8 @@
 
 (defclass client ()
   ((nickname
-    :type string
+    :type (or string null)
+    :initform nil
     :accessor user-nickname)
    (socket
     :initarg :socket
@@ -222,11 +231,12 @@
                            (parse in))))))
 
 (defun parse-list (string)
-  (loop
-     for begin = 0 then (1+ end)
-     for end = (position #\, string :start begin)
-     collect (subseq string begin end)
-     while end))
+  (when (and string (plusp (length string)))
+    (loop
+       for begin = 0 then (1+ end)
+       for end = (position #\, string :start begin)
+       collect (subseq string begin end)
+       while end)))
 
 ;;; Send a message: SOURCE COMMAND ARGUMENTS... to RECIPIENTS.
 (defun message (recipients source command &rest arguments)
@@ -277,13 +287,8 @@
       (return-from process-input))
     (let ((handler (gethash command *command-table*)))
       (if handler
-          (handler-case (apply handler args)
-            (simple-condition (error)
-              (rpl "NOTICE"
-                   (first-line
-                    (apply #'format nil
-                           (simple-condition-format-control error)
-                           (simple-condition-format-arguments error))))))
+          (with-simple-restart (discard-message "Discard message.")
+            (apply handler args))
           (rpl 421 "Unknown command")))))
 
 ;;; IRC Commands
@@ -339,7 +344,8 @@
 
 (define-command nick (name)
   (with-slots (nicknames) *server*
-    (when (string= name (user-nickname *user*))
+    (when (and (user-registered-p *user*)
+               (string= name (user-nickname *user*)))
       (return-from irc-nick))
     ;; If the new nickname already exists
     (when (gethash name nicknames)
@@ -426,6 +432,17 @@
           (rpl 366 name "End of NAMES list") ; RPL_ENDOFNAMES
           )))))
 
+(define-command list (&optional channels target)
+  (declare (ignore target))
+  (princ channels)
+  (let ((list (if (and channels (plusp (length channels)))
+                  (mapcar #'find-channel (parse-list channels))
+                  (server-channel-list))))
+    (rpl 321)                           ; deprecated, but ERC expects
+    (dolist (item list)
+      (rpl 322 (channel-name item) (length (channel-users item)) (channel-topic item)))
+    (rpl 323 "End of LIST")))
+
 (define-command mode (target &optional mode)
   (declare (ignore target mode)))
 
@@ -470,12 +487,14 @@
   (message *user* nil "PONG" server1))
 
 (define-command quit (&optional message)
-  (apply #'propagate (visible-users *user*) "QUIT" (mklist message))
+  (ignore-errors 
+    (apply #'propagate (visible-users *user*) "QUIT" (mklist message)))
   (ignore-errors 
     (message *user* "ERROR"
              (format nil "Closing Link: ~a ~@[~a~]"
                      (user-hostname *user*)
                      message)))
+
   (removef *user* (server-users *server*))
   (mapc #'part (user-channels *user*))
   (removef *user* (server-users *server*))
