@@ -216,19 +216,27 @@
     `(progn (defun ,(intern funcname) ,args ,@body)
             (setf (gethash ,(prin1-to-string name) *command-table*) ',(intern funcname)))))
 
+(defun parse-input-arguments* (in)
+  (loop
+     for ch = (peek-char nil in nil) while ch
+     collect (if (char= ch #\:)
+                 (progn (read-char in)
+                        (if (not (peek-char nil in nil nil))
+                            ""
+                            (read-line in nil)))
+                 (parse in))))
+
+(defun parse-input-arguments (string)
+  (with-input-from-string (in string)
+    (parse-input-arguments* in)))
+
 (defun parse-input-line (string)
   (with-input-from-string (in string)
     (values (and (char= (peek-char nil in) #\:)
                  (progn (read-char in) (parse in)))
             (parse in)
-            (loop
-               for ch = (peek-char nil in nil) while ch
-               collect (if (char= ch #\:)
-                           (progn (read-char in)
-                                  (if (not (peek-char nil in nil nil))
-                                      ""
-                                      (read-line in nil)))
-                           (parse in))))))
+            (parse-input-arguments* in))))
+
 
 (defun parse-list (string)
   (when (and string (plusp (length string)))
