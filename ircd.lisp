@@ -288,13 +288,16 @@
     (setf (last-activity user) (get-universal-time))
     (unless (or (user-registered-p *user*)
                 (find command '("USER" "PASS" "NICK" "PING") :test #'string-ci=))
-      (err-notregistered)
-      (return-from process-input))
+      (err-notregistered))
     (let ((handler (gethash command *command-table*)))
       (if handler
           (with-simple-restart (discard-message "Discard message.")
-            (apply handler args))
+            (catch 'abort-command
+              (apply handler args)))
           (err-unknowncommand :command command)))))
+
+(defun abort-command ()
+  (throw 'abort-command nil))
 
 ;;; IRC Commands
 
