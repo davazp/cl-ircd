@@ -202,10 +202,7 @@
                             (let ((line (string-right-trim #(#\Return) (get-output-stream-string input-buffer))))
                               (process-input user line))
                             (write-char ch input-buffer)))
-                 #+sbcl
-                 (sb-int:closed-stream-error ()
-                   (irc-quit))
-                 (end-of-file ()
+                 (error ()
                    (irc-quit)))))))))))
 
 (defvar *command-table*
@@ -505,10 +502,8 @@
              (format nil "Closing Link: ~a ~@[~a~]"
                      (user-hostname *user*)
                      message)))
-
   (removef *user* (server-users *server*))
   (mapc #'part (user-channels *user*))
-  (removef *user* (server-users *server*))
   (remhash (user-nickname *user*) (server-nicknames *server*))
   (usocket:socket-close (user-socket *user*)))
 
