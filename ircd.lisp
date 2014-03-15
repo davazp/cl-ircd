@@ -291,13 +291,13 @@
     (setf (last-activity user) (get-universal-time))
     (unless (or (user-registered-p *user*)
                 (find command '("USER" "PASS" "NICK" "PING") :test #'string-ci=))
-      (rpl 451 "You have not registered")
+      (err-notregistered)
       (return-from process-input))
     (let ((handler (gethash command *command-table*)))
       (if handler
           (with-simple-restart (discard-message "Discard message.")
             (apply handler args))
-          (rpl 421 "Unknown command")))))
+          (err-unknowncommand :command command)))))
 
 ;;; IRC Commands
 
@@ -318,31 +318,32 @@
              (slot-boundp *user* 'username)
              (not (user-registered-p *user*)))
     (setf (user-registered-p *user*) t)
-    (flet ((reply (code fmt &rest args)
-             (rpl code (apply #'format nil fmt args))))
-      (reply 001 "Welcome to the Internet Relay Network ~a!~a@~a"
-             (user-nickname *user*)
-             (user-username *user*)
-             (user-hostname *user*))
-      (reply 002 "Your host is ~a, runnning ~a" *servername* *software*)
-      (reply 003 "This server was created ~a" (timestamp-string (server-uptime *server*)))
-      (rpl   004 *servername* *software* "i" "o")
-      ;; Send MOTD
-      (cond
-        ((probe-file "MOTD")
-         (reply 375 "~a Message of the day - " *servername*)
-         (with-open-file (in "MOTD")
-           (loop
-              for line = (read-line in nil)
-              while line
-              do (loop
-                    for begin = 0 then end
-                    for end = (min (length line) (+ begin 80))
-                    while (< begin end)
-                    do (rpl 372 (subseq line begin end)))))
-         (rpl 376 "End of MOTD command"))
-        (t
-         (rpl 422 "MOTD File is missing"))))))
+    (rpl-welcome :nick (user-nickname *user*)
+                 :user (user-username *user*)
+                 :host (user-hostname *user*))
+    (rpl-yourhost :servername *servername*
+                  :ver *software*)
+    (rpl-created :date (timestamp-string (server-uptime *server*)))
+    (rpl-myinfo :servername *servername*
+                :version *software*
+                :available-user-modes "i"
+                :available-channel-modes "o")
+    ;; Send MOTD
+    (cond
+      ((probe-file "MOTD")
+       (rpl-motdstart :server *servername*)
+       (with-open-file (in "MOTD")
+         (loop
+            for line = (read-line in nil)
+            while line
+            do (loop
+                  for begin = 0 then end
+                  for end = (min (length line) (+ begin 80))
+                  while (< begin end)
+                  do (rpl-motd :text (subseq line begin end)))))
+       (rpl-endofmotd))
+      (t
+       (err-nomotd)))))
 
 
 ;;; Registration commands
@@ -392,8 +393,8 @@
     (push channel (user-channels *user*))
     (propagate (channel-users channel) "JOIN" channel-name)
     (if (channel-topic channel)
-        (rpl 332 channel-name (channel-topic channel))
-        (rpl 331 channel-name "No topic is set")) ;TPL_TOPIC
+        (rpl-topic :channel channel-name :topic (channel-topic channel))
+        (rpl-notopic :channel channel-name))
     (irc-names channel-name)))
 
 (define-command join (channel-list &optional pass-list)
@@ -446,10 +447,12 @@
   (let ((list (if (and channels (plusp (length channels)))
                   (mapcar #'find-channel (parse-list channels))
                   (server-channel-list))))
-    (rpl 321)                           ; deprecated, but ERC expects
+    (rpl-liststart)
     (dolist (item list)
-      (rpl 322 (channel-name item) (length (channel-users item)) (channel-topic item)))
-    (rpl 323 "End of LIST")))
+      (rpl-list :channel (channel-name item)
+                :#-visible (length (channel-users item))
+                :topic (channel-topic item)))
+    (rpl-listend)))
 
 (define-command mode (target &optional mode)
   (declare (ignore target mode)))
@@ -458,7 +461,7 @@
   (let ((channel (find-channel channame)))
     (when channel
       (if (null message)
-          (rpl 332 channame (channel-topic channel))
+          (rpl-topic :channel channame :topic (channel-topic channel))
           (let ((newtopic (if (string= message "") nil message)))
             (setf (channel-topic channel) newtopic)
             (propagate (channel-users channel) "TOPIC" channame message))))))
@@ -478,13 +481,13 @@
 (define-command privmsg (recipient message)
   (let ((users (list-of-users recipient)))
     (if (null users)
-        (rpl 401 recipient recipient "No such nick/channel")
+        (err-nosuchnick :nickname recipient)
         (propagate (remove *user* users) "PRIVMSG" recipient message))))
 
 (define-command notice (recipient message)
   (let ((users (list-of-users recipient)))
     (if (null users)
-        (rpl 401 recipient recipient "No such nick/channel")
+        (err-nosuchnick :nickname recipient)
         (propagate (remove *user* users) "NOTICE" recipient message))))
 
 

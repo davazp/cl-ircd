@@ -100,6 +100,7 @@
 ;; (defreply 319 RPL-WHOISCHANNELS "<nick> :*( ( \"@\" / \"+\" ) <channel> \" \" )")
 (defreply 314 RPL-WHOWASUSER "<nick> <user> <host> * :<real name>")
 (defreply 369 RPL-ENDOFWHOWAS "<nick> :End of WHOWAS")
+(defreply 321 RPL-LISTSTART)
 (defreply 322 RPL-LIST "<channel> <# visible> :<topic>")
 (defreply 323 RPL-LISTEND ":End of LIST")
 (defreply 325 RPL-UNIQOPIS "<channel> <nickname>")

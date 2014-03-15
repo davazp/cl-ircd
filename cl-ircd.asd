@@ -33,6 +33,7 @@
     :components
     ((:static-file "README.org")
      (:static-file "COPYING")
-     (:file "cl-ircd")))
+     (:file "ircd")
+     (:file "replies")))
 
 ;;; cl-ircd.asd ends here
