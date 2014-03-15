@@ -92,7 +92,7 @@
     :type list
     :accessor server-users)
    (channels
-    :initform (make-hash-table :test #'equal)
+    :initform (make-hash-table :test #'equalp)
     :reader server-channels)
    (socket
     :initarg :socket
