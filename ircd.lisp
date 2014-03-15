@@ -164,10 +164,10 @@
 (defun start-server (&key (port 6667) (host usocket:*wildcard-host*))
   (let* ((socket (usocket:socket-listen host port :reuse-address t :backlog 20))
 	 (server (make-instance 'server :port port :socket socket)))
-    (bordeaux-threads:make-thread
-     (lambda () (loop (accept-connection server))))
-    (bordeaux-threads:make-thread
-     (lambda () (loop (handle-event server))))
+    (bt:make-thread (lambda () (loop (accept-connection server)))
+                    :name "IRCD Acceptor")
+    (bt:make-thread (lambda () (loop (handle-event server)))
+                    :name "IRCD Event processor")
     (setf *server* server)))
 
 (defun stop-server ()
