@@ -21,7 +21,10 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun intern-docspec-variable (name)
-    (intern (nsubstitute #\- #\space (string-upcase name))))
+    (loop
+       for (from to) in '((#\space #\-) (#\# #\n))
+       do (setq name (nsubstitute to from name)))
+    (intern (string-upcase name)))
 
   (defun read-docspec-variable (stream)
     (with-output-to-string (var)

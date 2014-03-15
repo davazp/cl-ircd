@@ -447,7 +447,7 @@
     (rpl-liststart)
     (dolist (item list)
       (rpl-list :channel (channel-name item)
-                :#-visible (length (channel-users item))
+                :n-visible (length (channel-users item))
                 :topic (channel-topic item)))
     (rpl-listend)))
 
