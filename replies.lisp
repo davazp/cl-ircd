@@ -86,10 +86,10 @@
 
 
 (defreply 001 RPL-WELCOME ":Welcome to the Internet Relay Network <nick>!<user>@<host>")
-(defreply 002 RPL-YOURHOST "Your host is <servername>, running version <ver>")
-(defreply 003 RPL-CREATED "This server was created <date>")
+(defreply 002 RPL-YOURHOST ":Your host is <servername>, running version <ver>")
+(defreply 003 RPL-CREATED ":This server was created <date>")
 (defreply 004 RPL-MYINFO "<servername> <version> <available user modes> <available channel modes>")
-(defreply 005 RPL-BOUNCE "Try server <server name>, port <port number>")
+(defreply 005 RPL-BOUNCE ":Try server <server name>, port <port number>")
 ;; (defreply 302 RPL-USERHOST ":*1<reply> *( \" \" <reply> )")
 ;; (defreply 303 RPL-ISON ":*1<nick> *( \" \" <nick> )")
 (defreply 301 RPL-AWAY "<nick> :<away message>")
