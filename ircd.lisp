@@ -508,7 +508,8 @@
   (removef *user* (server-users *server*))
   (mapc #'part (user-channels *user*))
   (remhash (user-nickname *user*) (server-nicknames *server*))
-  (usocket:socket-close (user-socket *user*)))
+  (ignore-errors
+    (usocket:socket-close (user-socket *user*))))
 
 
 ;;; cl-ircd.lisp ends here
