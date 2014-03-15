@@ -178,8 +178,9 @@
       (usocket:socket-close (user-socket user)))))
 
 (defun accept-connection (server)
-  (let ((socket (usocket:socket-accept (server-socket server))))
-    (push (make-instance 'user :socket socket) (server-users server))))
+  (ignore-errors
+    (let ((socket (usocket:socket-accept (server-socket server))))
+      (push (make-instance 'user :socket socket) (server-users server)))))
 
 (defvar *user*)
 (defun handle-event (server)
