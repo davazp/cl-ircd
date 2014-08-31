@@ -444,7 +444,6 @@
 
 (define-command list (&optional channels target)
   (declare (ignore target))
-  (princ channels)
   (let ((list (if (and channels (plusp (length channels)))
                   (mapcar #'find-channel (parse-list channels))
                   (server-channel-list))))
